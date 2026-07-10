@@ -101,13 +101,36 @@ Server -> Client:
                     (emitted to artisan:<artisanId> room)
 
 ====================================================================
+EMAIL VERIFICATION FLOW
+====================================================================
+When email confirmation is ON in Supabase (default):
+1. POST /auth/signup -> Supabase sends confirmation email
+2. User clicks link in email -> Supabase verifies token
+3. Browser is redirected to CLIENT_URL (your frontend) with
+   `#access_token=...&refresh_token=...&type=signup` in the URL hash
+4. The frontend must handle this using Supabase's JS client:
+
+   supabase.auth.onAuthStateChange((event, session) => {
+     if (event === 'SIGNED_IN') {
+       // Session is ready — store tokens, call GET /auth/me
+     }
+   })
+
+   Or parse the URL hash manually on mount and call
+   supabase.auth.setSession({ access_token, refresh_token })
+
+Backend config: emailRedirectTo is set in services/auth.js signup()
+using CLIENT_URL env var. Make sure CLIENT_URL is set in .env
+(e.g. CLIENT_URL=http://localhost:5173).
+
+====================================================================
 SUPABASE AUTH FLOW
 ====================================================================
 1. Sign up / log in via /auth endpoints -> get access_token + refresh_token
 2. Store tokens client-side (localStorage / secure storage)
 3. Attach `Authorization: Bearer <access_token>` to all protected requests
 4. When access_token expires, use /auth/refresh with refresh_token
-5. On app load, call GET /auth/me to restore session
+5. On app load, call GET /auth/me or listen to onAuthStateChange to restore session
 
 ====================================================================
 DATABASE TABLES (Supabase / PostgreSQL)
