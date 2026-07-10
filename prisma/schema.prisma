@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BookingStatus {
+  BROADCAST
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingType {
+  INSTANT
+  QUOTE
+}
+
+model Role {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  profiles  Profile[]
+
+  @@map("roles")
+}
+
+model Profile {
+  id        Int       @id @default(autoincrement())
+  authId    String    @unique @map("auth_id")
+  email     String
+  fullName  String    @map("full_name")
+  phone     String?
+  address   String?
+  avatarUrl String?   @map("avatar_url")
+  roleId    Int       @map("role_id")
+  role      Role      @relation(fields: [roleId], references: [id])
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  bookingsAsCustomer Booking[] @relation("CustomerBookings")
+  bookingsAsArtisan  Booking[] @relation("ArtisanBookings")
+  services           Service[]
+  notifications      Notification[]
+
+  @@map("profiles")
+}
+
+model Service {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  price       Decimal   @db.Decimal(10, 2)
+  artisanId   Int       @map("artisan_id")
+  artisan     Profile   @relation(fields: [artisanId], references: [id])
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  bookings Booking[]
+
+  @@map("services")
+}
+
+model Booking {
+  id          Int           @id @default(autoincrement())
+  customerId  Int           @map("customer_id")
+  artisanId   Int?          @map("artisan_id")
+  serviceId   Int           @map("service_id")
+  bookingType BookingType   @default(INSTANT) @map("booking_type")
+  status      BookingStatus @default(BROADCAST)
+  scheduledAt DateTime      @map("scheduled_at") @db.Timestamptz()
+  location    Unsupported("geometry(Point, 4326)")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  customer        Profile                @relation("CustomerBookings", fields: [customerId], references: [id])
+  artisan         Profile?               @relation("ArtisanBookings", fields: [artisanId], references: [id])
+  service         Service                @relation(fields: [serviceId], references: [id])
+  statusHistory   BookingStatusHistory[]
+
+  @@map("bookings")
+}
+
+model BookingStatusHistory {
+  id        Int           @id @default(autoincrement())
+  bookingId Int           @map("booking_id")
+  status    BookingStatus
+  changedAt DateTime      @default(now()) @map("changed_at") @db.Timestamptz()
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+
+  @@map("booking_status_history")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  profileId Int      @map("profile_id")
+  title     String
+  body      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  profile Profile @relation(fields: [profileId], references: [id])
+
+  @@map("notifications")
+}

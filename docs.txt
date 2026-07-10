@@ -1,0 +1,122 @@
+Truho API Documentation
+========================
+
+Base URL: http://localhost:3000
+Auth: Supabase (JWT tokens via Authorization: Bearer <access_token> header)
+
+====================================================================
+AUTH ENDPOINTS (/auth)
+====================================================================
+
+POST /auth/signup
+  Body: { "email": string, "password": string (min 6 chars), "fullName": string }
+  Response: { user, session (access_token + refresh_token), profile }
+
+POST /auth/login
+  Body: { "email": string, "password": string }
+  Response: { user, session (access_token + refresh_token), profile }
+
+POST /auth/google
+  Body: { "accessToken": string }
+  Response: { user, session, profile }
+
+POST /auth/apple
+  Body: { "identityToken": string }
+  Response: { user, session, profile }
+
+POST /auth/logout
+  Headers: Authorization: Bearer <access_token>
+  Response: { message }
+
+POST /auth/refresh
+  Body: { "refreshToken": string }
+  Response: { session, user }
+
+POST /auth/forgot-password
+  Body: { "email": string }
+  Response: { message: "Password reset email sent" }
+  Note: Sends email via Supabase, redirects to CLIENT_URL/reset-password
+
+POST /auth/reset-password
+  Body: { "accessToken": string, "newPassword": string (min 6 chars) }
+  Response: { message: "Password reset successful" }
+
+GET /auth/me
+  Headers: Authorization: Bearer <access_token>
+  Response: { user: { id, email, role }, profile }
+  Note: Returns the authenticated user's profile
+
+POST /auth/complete-profile
+  Headers: Authorization: Bearer <access_token>
+  Body: { "role": "CUSTOMER" | "ARTISAN", "phone": string, "address"?: string, "avatarUrl"?: string }
+  Response: { message, profile }
+  Note: Must be called after signup to set role and phone. Without this,
+        bookings won't work (booking endpoints require CUSTOMER role).
+
+====================================================================
+BOOKING ENDPOINTS (/api/bookings)
+====================================================================
+Both require: Authorization: Bearer <access_token> (CUSTOMER role only)
+
+POST /api/bookings/instant
+  Body: {
+    "serviceId": number,
+    "scheduledAt": string (ISO 8601, e.g. "2026-07-10T14:00:00Z"),
+    "location": { "lat": number, "lng": number }
+  }
+  Response: { message, booking }
+
+POST /api/bookings/quote
+  Body: {
+    "artisanId": number,
+    "serviceId": number,
+    "scheduledAt": string (ISO 8601),
+    "location": { "lat": number, "lng": number }
+  }
+  Response: { message, booking }
+
+====================================================================
+OTHER
+====================================================================
+
+GET /api/health
+  Response: { status: "ok", timestamp }
+
+====================================================================
+WEBSOCKET (Socket.IO)
+====================================================================
+Socket.IO is available at the same port. Events:
+
+Client -> Server:
+  join:artisan   -> { artisanId }   // Join artisan room
+  join:customer  -> { customerId }  // Join customer room
+
+Server -> Client:
+  DISPATCH_BROADCAST -> { type: "INSTANT_BOOKING", bookingId, customerId,
+                          serviceId, scheduledAt, location, timestamp }
+                        (emitted to service:<serviceId> room)
+
+  QUOTE_ASSIGNED -> { type: "QUOTE_BOOKING", bookingId, customerId,
+                      artisanId, serviceId, scheduledAt, location, timestamp }
+                    (emitted to artisan:<artisanId> room)
+
+====================================================================
+SUPABASE AUTH FLOW
+====================================================================
+1. Sign up / log in via /auth endpoints -> get access_token + refresh_token
+2. Store tokens client-side (localStorage / secure storage)
+3. Attach `Authorization: Bearer <access_token>` to all protected requests
+4. When access_token expires, use /auth/refresh with refresh_token
+5. On app load, call GET /auth/me to restore session
+
+====================================================================
+DATABASE TABLES (Supabase / PostgreSQL)
+====================================================================
+roles:          id, name
+profiles:       id, auth_id, email, full_name, phone, address, avatar_url,
+                role_id, created_at, updated_at
+services:       id, name, description, price, artisan_id, is_active, created_at, updated_at
+bookings:       id, customer_id, artisan_id, service_id, booking_type, status,
+                scheduled_at, location (PostGIS Point), created_at, updated_at
+booking_status_history: id, booking_id, status, changed_at
+notifications:  id, profile_id, title, body, read, created_at
