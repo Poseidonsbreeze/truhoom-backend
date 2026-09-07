@@ -75,6 +75,9 @@ async function googleLogin(req, res, next) {
       profile: result.profile,
     });
   } catch (err) {
+    if (err.code === 'OAUTH_NOT_CONFIGURED') {
+      return res.status(err.status || 503).json({ error: err.message, code: err.code });
+    }
     next(err);
   }
 }
@@ -98,6 +101,9 @@ async function appleLogin(req, res, next) {
       profile: result.profile,
     });
   } catch (err) {
+    if (err.code === 'OAUTH_NOT_CONFIGURED') {
+      return res.status(err.status || 503).json({ error: err.message, code: err.code });
+    }
     next(err);
   }
 }

@@ -13,6 +13,16 @@ function validateCoordinates(lat, lng) {
   return { valid: true };
 }
 
+function validateLocation(location) {
+  if (!location || typeof location !== 'object') {
+    return { valid: false, error: 'location is required and must be an object' };
+  }
+  if (typeof location.lat !== 'number' || typeof location.lng !== 'number') {
+    return { valid: false, error: 'location must contain lat and lng as numbers' };
+  }
+  return validateCoordinates(location.lat, location.lng);
+}
+
 class BookingService {
   static async createInstantRequest(customerId, { serviceId, scheduledAt, location }) {
     const coordCheck = validateCoordinates(location.lat, location.lng);
@@ -33,18 +43,22 @@ class BookingService {
         VALUES (
           ${customerId},
           ${serviceId},
-          'INSTANT'::booking_type,
-          'BROADCAST'::booking_status,
+          'INSTANT'::"BookingType",
+          'BROADCAST'::"BookingStatus",
           ${new Date(scheduledAt)}::timestamptz,
           ST_SetSRID(ST_MakePoint(${location.lng}, ${location.lat}), 4326)
         )
-        RETURNING *;
+        RETURNING id, customer_id, artisan_id, service_id, booking_type, status,
+                  scheduled_at, created_at, updated_at,
+                  ST_AsText(location) AS location;
       `;
 
-      await tx.$executeRaw`
-        INSERT INTO booking_status_history (booking_id, status)
-        VALUES (${created.id}, 'BROADCAST'::booking_status);
-      `;
+      await tx.bookingStatusHistory.create({
+        data: {
+          bookingId: created.id,
+          status: 'BROADCAST',
+        },
+      });
 
       return created;
     });
@@ -73,18 +87,22 @@ class BookingService {
           ${customerId},
           ${artisanId},
           ${serviceId},
-          'QUOTE'::booking_type,
-          'ASSIGNED'::booking_status,
+          'QUOTE'::"BookingType",
+          'ASSIGNED'::"BookingStatus",
           ${new Date(scheduledAt)}::timestamptz,
           ST_SetSRID(ST_MakePoint(${location.lng}, ${location.lat}), 4326)
         )
-        RETURNING *;
+        RETURNING id, customer_id, artisan_id, service_id, booking_type, status,
+                  scheduled_at, created_at, updated_at,
+                  ST_AsText(location) AS location;
       `;
 
-      await tx.$executeRaw`
-        INSERT INTO booking_status_history (booking_id, status)
-        VALUES (${created.id}, 'ASSIGNED'::booking_status);
-      `;
+      await tx.bookingStatusHistory.create({
+        data: {
+          bookingId: created.id,
+          status: 'ASSIGNED',
+        },
+      });
 
       return created;
     });
@@ -113,20 +131,20 @@ async function createInstantRequestController(req, res, next) {
       });
     }
 
+    const locationValidation = validateLocation(location);
+    if (!locationValidation.valid) {
+      return res.status(400).json({ error: locationValidation.error });
+    }
+
     const booking = await BookingService.createInstantRequest(customerId, {
       serviceId,
       scheduledAt,
       location,
     });
 
-    const service = await prisma.service.findUnique({
-      where: { id: serviceId },
-      select: { artisanId: true },
-    });
-
     const io = getIO(req);
     if (io) {
-      io.to(`service:${serviceId}`).emit('DISPATCH_BROADCAST', {
+      io.to('artisans').emit('DISPATCH_BROADCAST', {
         type: 'INSTANT_BOOKING',
         bookingId: booking.id,
         customerId,
@@ -160,6 +178,11 @@ async function createQuoteRequestController(req, res, next) {
       return res.status(400).json({
         error: 'Missing required fields: artisanId, serviceId, scheduledAt, location',
       });
+    }
+
+    const locationValidation = validateLocation(location);
+    if (!locationValidation.valid) {
+      return res.status(400).json({ error: locationValidation.error });
     }
 
     const booking = await BookingService.createQuoteRequest(customerId, {

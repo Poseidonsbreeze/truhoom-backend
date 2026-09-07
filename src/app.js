@@ -31,7 +31,8 @@ io.on('connection', (socket) => {
 
   socket.on('join:artisan', (artisanId) => {
     socket.join(`artisan:${artisanId}`);
-    console.log(`[WS] ${socket.id} joined artisan:${artisanId}`);
+    socket.join('artisans');
+    console.log(`[WS] ${socket.id} joined artisan:${artisanId} and artisans room`);
   });
 
   socket.on('join:customer', (customerId) => {

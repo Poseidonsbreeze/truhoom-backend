@@ -6,16 +6,10 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY
 );
 
-function mapProvider(provider) {
-  switch (provider) {
-    case 'google':
-      return { provider: 'google' };
-    case 'apple':
-      return { provider: 'apple' };
-    default:
-      throw new Error(`Unsupported OAuth provider: ${provider}`);
-  }
-}
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 async function findOrCreateProfile(supabaseUser, role) {
   let profile = await prisma.profile.findUnique({
@@ -63,18 +57,7 @@ const AuthService = {
     let profile = null;
 
     if (supabaseUser) {
-      const roleRecord = await prisma.role.findUnique({ where: { name: 'CUSTOMER' } });
-      if (roleRecord) {
-        profile = await prisma.profile.create({
-          data: {
-            authId: supabaseUser.id,
-            fullName,
-            email: supabaseUser.email,
-            roleId: roleRecord.id,
-          },
-          include: { role: true },
-        });
-      }
+      profile = await findOrCreateProfile(supabaseUser, 'CUSTOMER');
     }
 
     return {
@@ -105,6 +88,20 @@ const AuthService = {
   },
 
   async oauthLogin({ provider, accessToken }) {
+    if (provider === 'google' && (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET)) {
+      const error = new Error('Google authentication is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.');
+      error.status = 503;
+      error.code = 'OAUTH_NOT_CONFIGURED';
+      throw error;
+    }
+
+    if (provider === 'apple' && (!process.env.APPLE_CLIENT_ID || !process.env.APPLE_TEAM_ID || !process.env.APPLE_KEY_ID || !process.env.APPLE_PRIVATE_KEY)) {
+      const error = new Error('Apple authentication is not configured. Please set APPLE_CLIENT_ID, APPLE_TEAM_ID, APPLE_KEY_ID, and APPLE_PRIVATE_KEY environment variables.');
+      error.status = 503;
+      error.code = 'OAUTH_NOT_CONFIGURED';
+      throw error;
+    }
+
     const { data: authData, error: authError } = await supabase.auth.signInWithIdToken({
       provider,
       token: accessToken,
@@ -126,7 +123,7 @@ const AuthService = {
 
   async logout(accessToken) {
     if (accessToken) {
-      const { error } = await supabase.auth.admin.signOut(accessToken);
+      const { error } = await supabaseAdmin.auth.admin.signOut(accessToken);
       if (error) {
         const { error: userError } = await supabase.auth.signOut();
         if (userError) {
@@ -164,7 +161,7 @@ const AuthService = {
       throw new Error('Invalid or expired reset token');
     }
 
-    const { error: updateError } = await supabase.auth.admin.updateUserById(
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
       userData.user.id,
       { password: newPassword }
     );
@@ -197,9 +194,6 @@ const AuthService = {
         phone,
         address,
         avatarUrl: avatarUrl || undefined,
-        fullName: undefined,
-        email: undefined,
-        authId: undefined,
       },
       include: { role: true },
     });
