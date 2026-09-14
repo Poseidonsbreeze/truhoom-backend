@@ -1,222 +1,51 @@
 const { prisma } = require('../config/database');
-
-function validateCoordinates(lat, lng) {
-  if (typeof lat !== 'number' || typeof lng !== 'number') {
-    return { valid: false, error: 'lat and lng must be numbers' };
-  }
-  if (lat < -90 || lat > 90) {
-    return { valid: false, error: 'lat must be between -90 and 90' };
-  }
-  if (lng < -180 || lng > 180) {
-    return { valid: false, error: 'lng must be between -180 and 180' };
-  }
-  return { valid: true };
-}
-
-function validateLocation(location) {
-  if (!location || typeof location !== 'object') {
-    return { valid: false, error: 'location is required and must be an object' };
-  }
-  if (typeof location.lat !== 'number' || typeof location.lng !== 'number') {
-    return { valid: false, error: 'location must contain lat and lng as numbers' };
-  }
-  return validateCoordinates(location.lat, location.lng);
-}
-
-class BookingService {
-  static async createInstantRequest(customerId, { serviceId, scheduledAt, location }) {
-    const coordCheck = validateCoordinates(location.lat, location.lng);
-    if (!coordCheck.valid) {
-      throw new Error(`Invalid coordinates: ${coordCheck.error}`);
-    }
-
-    const booking = await prisma.$transaction(async (tx) => {
-      const [created] = await tx.$queryRaw`
-        INSERT INTO bookings (
-          customer_id,
-          service_id,
-          booking_type,
-          status,
-          scheduled_at,
-          location
-        )
-        VALUES (
-          ${customerId},
-          ${serviceId},
-          'INSTANT'::"BookingType",
-          'BROADCAST'::"BookingStatus",
-          ${new Date(scheduledAt)}::timestamptz,
-          ST_SetSRID(ST_MakePoint(${location.lng}, ${location.lat}), 4326)
-        )
-        RETURNING id, customer_id, artisan_id, service_id, booking_type, status,
-                  scheduled_at, created_at, updated_at,
-                  ST_AsText(location) AS location;
-      `;
-
-      await tx.bookingStatusHistory.create({
-        data: {
-          bookingId: created.id,
-          status: 'BROADCAST',
-        },
-      });
-
-      return created;
-    });
-
+const fail = (message, status = 400) => Object.assign(new Error(message), { status });
+async function createBooking(customerId, body, quote) {
+  const { serviceId, addressId, artisanId, scheduledAt, notes = '' } = body;
+  const customerBudget = quote ? Number(body.customerBudget) : null;
+  if (!Number.isInteger(serviceId) || !Number.isInteger(addressId)) throw fail('Select a service and a saved address.');
+  if (quote && !Number.isInteger(artisanId)) throw fail('Select an artisan.');
+  if (quote && (!Number.isFinite(customerBudget) || customerBudget <= 0 || customerBudget > 100000000)) throw fail('Enter a valid price you want to pay.');
+  const date = new Date(scheduledAt);
+  if (!Number.isFinite(date.getTime()) || date <= new Date()) throw fail('Choose a future date and time.');
+  if (typeof notes !== 'string' || notes.length > 4000) throw fail('Notes must be at most 4000 characters.');
+  return prisma.$transaction(async db => {
+    const address = await db.savedAddress.findFirst({ where: { id: addressId, profileId: customerId } });
+    if (!address) throw fail('Saved address not found.', 404);
+    const service = await db.service.findFirst({ where: { id: serviceId, isActive: true, artisan: { role: { name: 'ARTISAN' } } } });
+    if (!service) throw fail('Service is no longer available.', 404);
+    if (quote && service.artisanId !== artisanId) throw fail('This service does not belong to the selected artisan.');
+    const status = quote ? 'QUOTE_REQUESTED' : 'BROADCAST';
+    const booking = await db.booking.create({ data: {
+      customerId, serviceId, artisanId: quote ? artisanId : null, bookingType: quote ? 'QUOTE' : 'INSTANT', status,
+      scheduledAt: date, latitude: address.lat, longitude: address.lng, address: address.address, notes: notes.trim(), customerBudget,
+      statusHistory: { create: { status } },
+    } });
+    await db.notification.create({ data: {
+      profileId: service.artisanId,
+      title: quote ? 'New quote request' : 'New booking request',
+      body: quote ? `Customer offered ₦${customerBudget.toLocaleString()} for ${service.name}.` : `${service.name} is scheduled for ${date.toISOString()}.`,
+    } });
     return booking;
-  }
-
-  static async createQuoteRequest(customerId, { artisanId, serviceId, scheduledAt, location }) {
-    const coordCheck = validateCoordinates(location.lat, location.lng);
-    if (!coordCheck.valid) {
-      throw new Error(`Invalid coordinates: ${coordCheck.error}`);
-    }
-
-    const booking = await prisma.$transaction(async (tx) => {
-      const [created] = await tx.$queryRaw`
-        INSERT INTO bookings (
-          customer_id,
-          artisan_id,
-          service_id,
-          booking_type,
-          status,
-          scheduled_at,
-          location
-        )
-        VALUES (
-          ${customerId},
-          ${artisanId},
-          ${serviceId},
-          'QUOTE'::"BookingType",
-          'ASSIGNED'::"BookingStatus",
-          ${new Date(scheduledAt)}::timestamptz,
-          ST_SetSRID(ST_MakePoint(${location.lng}, ${location.lat}), 4326)
-        )
-        RETURNING id, customer_id, artisan_id, service_id, booking_type, status,
-                  scheduled_at, created_at, updated_at,
-                  ST_AsText(location) AS location;
-      `;
-
-      await tx.bookingStatusHistory.create({
-        data: {
-          bookingId: created.id,
-          status: 'ASSIGNED',
-        },
-      });
-
-      return created;
-    });
-
-    return booking;
-  }
+  });
 }
-
-function getIO(req) {
-  return req.app.get('io');
-}
-
-async function createInstantRequestController(req, res, next) {
-  try {
-    const customerId = req.user.profileId;
-
-    if (req.user.role !== 'CUSTOMER') {
-      return res.status(403).json({ error: 'Only customers can create booking requests' });
-    }
-
-    const { serviceId, scheduledAt, location } = req.body;
-
-    if (!serviceId || !scheduledAt || !location) {
-      return res.status(400).json({
-        error: 'Missing required fields: serviceId, scheduledAt, location',
-      });
-    }
-
-    const locationValidation = validateLocation(location);
-    if (!locationValidation.valid) {
-      return res.status(400).json({ error: locationValidation.error });
-    }
-
-    const booking = await BookingService.createInstantRequest(customerId, {
-      serviceId,
-      scheduledAt,
-      location,
-    });
-
-    const io = getIO(req);
-    if (io) {
-      io.to('artisans').emit('DISPATCH_BROADCAST', {
-        type: 'INSTANT_BOOKING',
-        bookingId: booking.id,
-        customerId,
-        serviceId,
-        scheduledAt: booking.scheduled_at,
-        location,
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    res.status(201).json({
-      message: 'Booking request created and dispatched',
-      booking,
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-async function createQuoteRequestController(req, res, next) {
-  try {
-    const customerId = req.user.profileId;
-
-    if (req.user.role !== 'CUSTOMER') {
-      return res.status(403).json({ error: 'Only customers can create booking requests' });
-    }
-
-    const { artisanId, serviceId, scheduledAt, location } = req.body;
-
-    if (!artisanId || !serviceId || !scheduledAt || !location) {
-      return res.status(400).json({
-        error: 'Missing required fields: artisanId, serviceId, scheduledAt, location',
-      });
-    }
-
-    const locationValidation = validateLocation(location);
-    if (!locationValidation.valid) {
-      return res.status(400).json({ error: locationValidation.error });
-    }
-
-    const booking = await BookingService.createQuoteRequest(customerId, {
-      artisanId,
-      serviceId,
-      scheduledAt,
-      location,
-    });
-
-    const io = getIO(req);
-    if (io) {
-      io.to(`artisan:${artisanId}`).emit('QUOTE_ASSIGNED', {
-        type: 'QUOTE_BOOKING',
-        bookingId: booking.id,
-        customerId,
-        artisanId,
-        serviceId,
-        scheduledAt: booking.scheduled_at,
-        location,
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    res.status(201).json({
-      message: 'Quote booking created',
-      booking,
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-module.exports = {
-  createInstantRequestController,
-  createQuoteRequestController,
-  BookingService,
+const BookingService = {
+  createInstantRequest: (id, body) => createBooking(id, body, false),
+  createQuoteRequest: (id, body) => createBooking(id, body, true),
 };
+function controller(quote) {
+  return async (req, res, next) => {
+    try {
+      if (req.user.role !== 'CUSTOMER') throw fail('Only customers can create bookings.',403);
+      const booking = await createBooking(req.user.profileId, req.body, quote);
+      const service = await prisma.service.findUnique({ where: { id: booking.serviceId } });
+      req.app.get('io')?.to(`artisan:${service.artisanId}`).emit(quote ? 'QUOTE_ASSIGNED' : 'DISPATCH_BROADCAST', { bookingId: booking.id });
+      req.app.get('io')?.to(`profile:${service.artisanId}`).emit('notification:created', {
+        title: quote ? 'New quote request' : 'New booking request',
+        body: quote ? `Customer offered ₦${Number(booking.customerBudget).toLocaleString()} for ${service.name}.` : `${service.name} has a new booking request.`,
+      });
+      res.status(201).json({ message: quote ? 'Quote request sent.' : 'Booking request sent.', booking });
+    } catch (error) { next(error); }
+  };
+}
+module.exports = { BookingService, createInstantRequestController: controller(false), createQuoteRequestController: controller(true) };

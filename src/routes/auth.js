@@ -3,8 +3,6 @@ const { requireAuth } = require('../middlewares/auth');
 const {
   signup,
   login,
-  googleLogin,
-  appleLogin,
   logout,
   refresh,
   forgotPassword,
@@ -17,8 +15,6 @@ const router = Router();
 
 router.post('/signup', signup);
 router.post('/login', login);
-router.post('/google', googleLogin);
-router.post('/apple', appleLogin);
 router.post('/logout', logout);
 router.post('/refresh', refresh);
 router.post('/forgot-password', forgotPassword);
