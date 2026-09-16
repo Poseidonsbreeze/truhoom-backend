@@ -16,7 +16,9 @@ async function recordPayment(reference, transaction) {
   const booking = await prisma.booking.findUnique({ where: { paymentReference: reference }, include: { service: true } });
   if (!booking) return null;
   const expectedKobo = Math.round(Number(booking.paymentAmount) * 100);
-  if (transaction.status !== 'success' || transaction.currency !== 'NGN' || Number(transaction.amount) !== expectedKobo || transaction.reference !== reference) throw fail('Payment verification did not match this booking.', 409);
+  const requestedKobo = Number(transaction.requested_amount ?? transaction.amount);
+  const chargedKobo = Number(transaction.amount);
+  if (transaction.status !== 'success' || transaction.currency !== 'NGN' || requestedKobo !== expectedKobo || chargedKobo < expectedKobo || transaction.reference !== reference) throw fail('Payment verification did not match this booking.', 409);
   if (booking.paymentStatus === 'PAID') return booking;
   const fee = Math.round(Number(booking.paymentAmount) * feeRate()) / 100;
   return prisma.booking.update({ where: { id: booking.id }, data: { paymentStatus: 'PAID', paidAt: new Date(transaction.paid_at || Date.now()), platformFee: fee, artisanNet: Number(booking.paymentAmount) - fee } });
@@ -24,7 +26,7 @@ async function recordPayment(reference, transaction) {
 
 async function releasePayout(bookingId) {
   const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { artisan: { include: { payoutMethods: { where: { isDefault: true, provider: 'Paystack' }, take: 1 } } } } });
-  if (!booking || booking.status !== 'COMPLETED' || booking.paymentStatus !== 'PAID' || !booking.artisanNet || !['NOT_READY', 'FAILED'].includes(booking.payoutStatus)) return null;
+  if (!booking || booking.status !== 'COMPLETED' || booking.paymentStatus !== 'PAID' || !booking.artisanNet || !['NOT_READY', 'READY', 'FAILED'].includes(booking.payoutStatus)) return null;
   const recipient = booking.artisan?.payoutMethods[0]?.recipientToken;
   if (!recipient) return prisma.booking.update({ where: { id: booking.id }, data: { payoutStatus: 'READY' } });
   const reference = paystack.reference('truhoom-payout', booking.id);
@@ -55,9 +57,10 @@ router.post('/bookings/:id/initialize', requireAuth(['CUSTOMER']), wrap(async (r
   const amount = amountFor(booking);
   if (!Number.isFinite(amount) || amount <= 0) throw fail('This booking has no valid agreed price.', 409);
   const reference = paystack.reference('truhoom-pay', booking.id);
-  const data = await paystack.initialize({ email: booking.customer.email, amountKobo: Math.round(amount * 100), reference, metadata: { bookingId: booking.id, customerId: booking.customerId }, callbackUrl: process.env.PAYSTACK_CALLBACK_URL });
+  const callbackUrl = process.env.PAYSTACK_CALLBACK_URL || 'https://truhoom.app/payment-return';
+  const data = await paystack.initialize({ email: booking.customer.email, amountKobo: Math.round(amount * 100), reference, metadata: { bookingId: booking.id, customerId: booking.customerId }, callbackUrl });
   await prisma.booking.update({ where: { id: booking.id }, data: { paymentStatus: 'PENDING', paymentReference: reference, paymentAmount: amount } });
-  res.json({ authorizationUrl: data.authorization_url, reference, amount });
+  res.json({ authorizationUrl: data.authorization_url, callbackUrl, reference, amount });
 }));
 
 router.post('/bookings/:id/verify', requireAuth(['CUSTOMER']), wrap(async (req, res) => {

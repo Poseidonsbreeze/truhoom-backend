@@ -4,6 +4,7 @@
   "description": "Truho \u2014 on-demand marketplace platform connecting customers with verified artisans",
   "main": "src/index.js",
   "scripts": {
+    "admin:create": "node scripts/create-admin.js",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "prisma:generate": "prisma generate",

@@ -58,7 +58,7 @@ module.exports = {
   }),
   getMapBookings: wrap(async(req,res)=>{
     const center=await origin(req);
-    const bookings=await prisma.booking.findMany({where:{OR:[{artisanId:req.user.profileId},{artisanId:null,status:'BROADCAST',service:{artisanId:req.user.profileId}}],status:{in:['BROADCAST','ASSIGNED','IN_PROGRESS']}},include:{customer:{select:{fullName:true}},service:{select:{name:true}}},orderBy:{scheduledAt:'asc'}});
+    const bookings=await prisma.booking.findMany({where:{OR:[{artisanId:req.user.profileId},{artisanId:null,status:'BROADCAST',service:{artisanId:req.user.profileId}}],status:{in:['BROADCAST','QUOTE_REQUESTED','QUOTE_OFFERED','ASSIGNED','IN_PROGRESS','AWAITING_COMPLETION_CONFIRMATION']}},include:{customer:{select:{fullName:true}},service:{select:{name:true}}},orderBy:{scheduledAt:'asc'}});
     res.json(bookings.map(b=>({id:b.id,bookingId:b.id,name:b.customer.fullName,initials:initials(b.customer.fullName),profession:b.service.name,latitude:b.latitude,longitude:b.longitude,location:b.address || '',status:b.status,notes:b.notes || '',scheduledAt:b.scheduledAt,distance: (()=>{const d=distance(center?.latitude,center?.longitude,b.latitude,b.longitude);return d===null?'Location unavailable':`${d.toFixed(1)} km`;})()})));
   }),
 };
