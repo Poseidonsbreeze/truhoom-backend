@@ -10,6 +10,7 @@
     "prisma:push": "prisma db push",
     "prisma:migrate": "prisma migrate dev",
     "auth:reset": "node scripts/local-reset.js",
+    "admin:create": "node scripts/create-admin.js",
     "test:auth": "node --test test/local-auth.test.js",
     "test:screens": "node --test test/connected-screens.test.js",
     "test:production": "node --test test/production-flows.test.js"

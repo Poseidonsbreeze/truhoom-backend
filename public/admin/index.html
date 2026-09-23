@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Truhoom Admin</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="login-view" class="login-shell">
+    <form id="login-form" class="login-card">
+      <div class="brand-mark">T</div>
+      <p class="eyebrow">TRUHOOM OPERATIONS</p>
+      <h1>Admin sign in</h1>
+      <p class="muted">Access earnings, bookings, and artisan payouts.</p>
+      <label>Email<input id="email" type="email" autocomplete="username" required></label>
+      <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+      <p id="login-error" class="error" role="alert"></p>
+      <button id="login-button" type="submit">Sign in securely</button>
+    </form>
+  </main>
+
+  <main id="dashboard-view" class="app-layout hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><span class="brand-mark small">T</span><div><strong>Truhoom</strong><small>Admin console</small></div></div>
+      <nav><a href="#overview" class="active">Overview</a><a href="#payouts">Payouts</a><a href="#bookings">Bookings</a></nav>
+      <div class="sidebar-footer"><span class="live-dot"></span><span>API connected</span></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar"><div><p class="eyebrow">OPERATIONS OVERVIEW</p><h1>Financial dashboard</h1><p id="welcome" class="muted"></p></div><div class="actions"><span id="updated-at" class="updated"></span><button id="refresh" class="secondary">Refresh data</button><button id="logout" class="dark">Sign out</button></div></header>
+      <div id="page-error" class="page-error hidden" role="alert"></div>
+      <section id="overview"><div id="metrics" class="metrics" aria-label="Financial summary"></div><div id="insights" class="insights"></div></section>
+      <section id="payouts" class="panel"><div class="section-heading"><div><h2>Payout management</h2><p class="muted">Release eligible completed jobs and monitor Paystack transfers.</p></div><div class="filters"><input id="payout-search" type="search" placeholder="Search artisan, service, booking"><select id="payout-status"><option value="">All statuses</option><option>READY</option><option>PROCESSING</option><option>PAID</option><option>FAILED</option><option>NOT_READY</option></select></div></div><div class="table-scroll"><table><thead><tr><th>Booking</th><th>Artisan & account</th><th>Service</th><th>Customer paid</th><th>Platform fee</th><th>Artisan receives</th><th>Status</th><th>Action</th></tr></thead><tbody id="payout-rows"></tbody></table></div><p id="payout-empty" class="empty hidden">No payouts match these filters.</p></section>
+      <section id="bookings" class="panel"><div class="section-heading"><div><h2>Recent bookings</h2><p class="muted">Latest activity across customers and artisans.</p></div><div class="filters"><input id="booking-search" type="search" placeholder="Search people, service, booking"><select id="booking-status"><option value="">All job statuses</option><option>BROADCAST</option><option>QUOTE_REQUESTED</option><option>ASSIGNED</option><option>IN_PROGRESS</option><option>AWAITING_COMPLETION_CONFIRMATION</option><option>COMPLETED</option><option>CANCELLED</option></select></div></div><div class="table-scroll"><table><thead><tr><th>Booking</th><th>Customer</th><th>Artisan</th><th>Service</th><th>Job status</th><th>Payment</th><th>Amount</th></tr></thead><tbody id="booking-rows"></tbody></table></div><p id="booking-empty" class="empty hidden">No bookings match these filters.</p></section>
+    </div>
+  </main>
+  <div id="loading" class="loading hidden" aria-live="polite">Loading…</div>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

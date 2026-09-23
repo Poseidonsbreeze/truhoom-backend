@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 const { connectDatabase } = require('./config/database');
 const { requireAuth } = require('./middlewares/auth');
@@ -32,6 +33,12 @@ app.use('/api/bookings', require('./routes/bookings'));
 app.use('/api/messages', require('./routes/messages'));
 app.use('/api/operations', require('./routes/operations'));
 app.use('/api/payments', require('./routes/payments').router);
+app.use('/api/admin', requireAuth(['ADMIN']), require('./routes/admin'));
+
+app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));
+app.get('/admin/*', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'admin', 'index.html'));
+});
 
 io.use(async (socket, next) => {
   try {

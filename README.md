@@ -2,6 +2,46 @@
 
 # Truhoom Backend API Contract
 
+## Admin Panel
+
+The admin panel is a standalone SPA served at `/admin` that provides:
+- Financial dashboard with metrics and insights
+- Payout management for artisan payments via Paystack
+- Booking monitoring
+
+### Admin Setup
+
+1. Add to your `.env`:
+   ```
+   ADMIN_EMAIL=admin@yourdomain.com
+   ADMIN_PASSWORD=your-secure-password
+   ADMIN_NAME=Admin User
+   ```
+
+2. Run database migration (after schema changes):
+   ```bash
+   npx prisma migrate dev --name add_admin_role
+   ```
+
+3. Create the admin user:
+   ```bash
+   npm run admin:create
+   ```
+
+4. Start the backend:
+   ```bash
+   npm run dev
+   ```
+
+5. Access the admin panel at `http://localhost:3000/admin`
+
+### Admin API Endpoints
+
+All admin endpoints require `Authorization: Bearer <token>` with ADMIN role.
+
+- `GET /api/admin/dashboard` - Financial summary, recent payouts, recent bookings
+- `POST /api/admin/payouts/:id/release` - Initiate Paystack transfer for artisan payout
+
 ## Paystack marketplace payments
 
 Set `PAYSTACK_SECRET_KEY` only in the backend `.env`. Set `PLATFORM_FEE_PERCENT` to Truhoom's commission percentage. Customers pay the agreed booking price through Paystack; the backend verifies the exact reference, NGN currency and amount before marking the booking paid. Artisans cannot start unpaid work in the app. After the artisan marks the work finished and the customer confirms, Truhoom initiates a transfer for the artisan net amount using the artisan's verified Paystack recipient.

@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum RoleName {
+  CUSTOMER
+  ARTISAN
+  ADMIN
+}
+
 enum BookingStatus {
   BROADCAST
   QUOTE_REQUESTED
@@ -42,7 +48,7 @@ enum PayoutStatus {
 
 model Role {
   id        Int       @id @default(autoincrement())
-  name      String    @unique
+  name      RoleName  @unique
   profiles  Profile[]
 
   @@map("roles")
