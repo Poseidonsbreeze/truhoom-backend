@@ -46,7 +46,7 @@ test('profiles, addresses, discovery and booking locations persist and enforce o
     r=await request(`/api/discovery/artisans/${artisan.id}/reviews`,customer.token);assert.deepEqual(r.data,[]);
     await prisma.review.create({data:{artisanId:artisan.id,authorId:customer.id,rating:4,comment:'Real review',service:'Repair'}});
     r=await request(`/api/discovery/artisans/${artisan.id}`,customer.token);assert.equal(r.data.rating,4);assert.equal(r.data.reviewCount,1);
-    const body={serviceId:service.id,addressId:address.id,artisanId:artisan.id,scheduledAt:new Date(Date.now()+86400000).toISOString(),notes:'Use the side entrance'};
+    const body={serviceId:service.id,addressId:address.id,artisanId:artisan.id,customerBudget:10000,scheduledAt:new Date(Date.now()+86400000).toISOString(),notes:'Use the side entrance'};
     assert.equal((await request('/api/bookings/quote',other.token,'POST',body)).status,404);
     assert.equal((await request('/api/bookings/quote',customer.token,'POST',{...body,artisanId:stranger.id})).status,400);
     assert.equal((await request('/api/bookings/instant',customer.token,'POST',{...body,serviceId:inactive.id})).status,404);
