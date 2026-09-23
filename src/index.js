@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: process.env.NODE_ENV !== 'production' });
 const { start } = require('./app');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
