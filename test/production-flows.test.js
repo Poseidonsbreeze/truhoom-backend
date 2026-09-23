@@ -5,6 +5,7 @@ const { randomUUID } = require('node:crypto');
 const { prisma } = require('../src/config/database');
 const auth = require('../src/services/auth');
 const { app } = require('../src/app');
+const { recordPayment } = require('../src/routes/payments');
 
 test('production screen flows persist and enforce authorization', async () => {
   assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(new URL(process.env.DATABASE_URL).hostname));
@@ -22,7 +23,8 @@ test('production screen flows persist and enforce authorization', async () => {
   };
   try {
     const customer = await make('CUSTOMER', 'Customer'); const otherCustomer = await make('CUSTOMER', 'OtherCustomer');
-    const artisan = await make('ARTISAN', 'Artisan'); const otherArtisan = await make('ARTISAN', 'OtherArtisan');
+    const artisan = await make('ARTISAN', 'Artisan'); const otherArtisan = await make('ARTISAN', 'OtherArtisan'); const admin = await make('ADMIN', 'Admin');
+    assert.equal((await call('/api/admin/dashboard', customer.token)).status, 403);
     let result = await call('/api/account/addresses', customer.token, 'POST', { label: 'Home', address: '1 Production Street', lat: 6.45, lng: 3.47 });
     const address = result.data;
     result = await call('/api/operations/services', artisan.token, 'POST', { name: 'Safe repair', description: 'Production service', price: 12000, durationMinutes: 90 });
@@ -72,7 +74,10 @@ test('production screen flows persist and enforce authorization', async () => {
     assert.equal((await call(`/api/bookings/${booking.id}/status`, otherArtisan.token, 'PATCH', { action: 'accept' })).status, 409);
     assert.equal((await call(`/api/bookings/${booking.id}/status`, artisan.token, 'PATCH', { action: 'accept' })).status, 200);
     assert.equal((await call(`/api/bookings/${booking.id}/status`, artisan.token, 'PATCH', { action: 'start' })).status, 409);
-    await prisma.booking.update({ where: { id: booking.id }, data: { paymentStatus: 'PAID', paymentAmount: 13000, platformFee: 1300, artisanNet: 11700, paidAt: new Date() } });
+    const paymentReference = `test-pay-${marker}`;
+    await prisma.booking.update({ where: { id: booking.id }, data: { paymentStatus: 'PENDING', paymentReference, paymentAmount: 13000 } });
+    const paidBooking = await recordPayment(paymentReference, { status: 'success', currency: 'NGN', requested_amount: 1300000, amount: 1320000, reference: paymentReference, paid_at: new Date().toISOString() });
+    assert.equal(paidBooking.paymentStatus, 'PAID'); assert.equal(Number(paidBooking.platformFee), 1300); assert.equal(Number(paidBooking.artisanNet), 11700);
     assert.equal((await call(`/api/bookings/${booking.id}/status`, artisan.token, 'PATCH', { action: 'start' })).data.status, 'IN_PROGRESS');
     result = await call(`/api/bookings/${booking.id}/status`, artisan.token, 'PATCH', { action: 'complete' });
     assert.equal(result.data.status, 'AWAITING_COMPLETION_CONFIRMATION'); assert.ok(result.data.artisanCompletedAt); assert.equal(result.data.customerCompletedAt, null);
@@ -80,6 +85,9 @@ test('production screen flows persist and enforce authorization', async () => {
     assert.equal((await call(`/api/bookings/${booking.id}/status`, otherCustomer.token, 'PATCH', { action: 'confirm-completion' })).status, 404);
     result = await call(`/api/bookings/${booking.id}/status`, customer.token, 'PATCH', { action: 'confirm-completion' });
     assert.equal(result.data.status, 'COMPLETED'); assert.ok(result.data.customerCompletedAt);
+    result = await call('/api/admin/dashboard', admin.token); assert.equal(result.status, 200);
+    assert.ok(result.data.summary.platformEarnings >= 1300); assert.ok(result.data.payouts.some((item) => item.id === booking.id));
+    assert.equal((await call(`/api/admin/payouts/${booking.id}/release`, admin.token, 'POST')).status, 200);
     assert.equal((await call(`/api/bookings/${booking.id}`, otherCustomer.token)).status, 404);
     result = await call(`/api/bookings/${booking.id}/review`, customer.token, 'POST', { rating: 5, comment: 'Excellent work' }); assert.equal(result.status, 201);
     assert.equal((await call(`/api/bookings/${booking.id}/review`, customer.token, 'POST', { rating: 4, comment: 'Again' })).status, 409);

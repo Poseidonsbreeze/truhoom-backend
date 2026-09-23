@@ -271,4 +271,16 @@ Server-side events emitted to clients:
 - Authentication flows should return enough session data for the app to persist login state.
 - For booking requests, the frontend sends `serviceId` and `location` in a simple JSON structure.
 
-If you want, I can also convert this into a more formal OpenAPI/Swagger file for the backend team.
+# Web admin dashboard
+
+The admin dashboard is the separate `truhoom-admin` web project. Admin API routes require an authenticated profile with the `ADMIN` role.
+
+Create the first admin locally by adding these values to `.env`:
+
+```env
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=use-a-long-unique-password
+ADMIN_NAME=Truhoom Admin
+```
+
+Then run `npm run admin:create` from `truhoom-backend` and open the separate admin project at `http://localhost:4173`. Existing local accounts can be promoted by setting `ADMIN_EMAIL` to their email; their current password is retained. Do not expose the admin credentials through public frontend configuration.

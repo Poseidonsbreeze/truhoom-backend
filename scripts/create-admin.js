@@ -1,32 +1,24 @@
-require('dotenv').config();
-const auth = require('../src/services/auth');
+require('dotenv').config({ override: true });
 const { prisma } = require('../src/config/database');
+const auth = require('../src/services/auth');
 
-(async () => {
-  const email = process.env.ADMIN_EMAIL;
-  const password = process.env.ADMIN_PASSWORD;
-  const name = process.env.ADMIN_NAME || 'Admin';
-
-  if (!email || !password) {
-    throw new Error('Set ADMIN_EMAIL and ADMIN_PASSWORD environment variables');
+async function main() {
+  const email = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  const password = String(process.env.ADMIN_PASSWORD || '');
+  const fullName = String(process.env.ADMIN_NAME || 'Truhoom Admin').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12) {
+    throw new Error('Set ADMIN_EMAIL and an ADMIN_PASSWORD of at least 12 characters in .env.');
   }
-
-  console.log(`Creating admin user: ${email}`);
-
-  try {
-    const result = await auth.signup({ email, password, fullName: name, role: 'ADMIN' });
-    console.log('✅ Admin created successfully!');
-    console.log('Email:', result.user.email);
-    console.log('Access token:', result.session.access_token);
-    console.log('\nUse these credentials to log in at http://localhost:4173');
-  } catch (error) {
-    if (error.code === 'P2002') {
-      console.error('❌ An account already exists for this email.');
-    } else {
-      console.error('❌ Error:', error.message);
-    }
-    process.exitCode = 1;
-  } finally {
-    await prisma.$disconnect();
+  const existing = await prisma.profile.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, include: { credential: true } });
+  if (existing) {
+    if (!existing.credential) throw new Error('The existing account has no local password. Reset its password before promoting it.');
+    const role = await prisma.role.upsert({ where: { name: 'ADMIN' }, update: {}, create: { name: 'ADMIN' } });
+    await prisma.profile.update({ where: { id: existing.id }, data: { roleId: role.id } });
+    console.log(`Admin access enabled for ${email}. Existing password retained.`);
+    return;
   }
-})();
+  await auth.signup({ email, password, fullName, role: 'ADMIN' });
+  console.log(`Admin account created for ${email}.`);
+}
+
+main().catch((error) => { console.error(error.message); process.exitCode = 1; }).finally(() => prisma.$disconnect());

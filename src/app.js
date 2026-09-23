@@ -33,12 +33,7 @@ app.use('/api/bookings', require('./routes/bookings'));
 app.use('/api/messages', require('./routes/messages'));
 app.use('/api/operations', require('./routes/operations'));
 app.use('/api/payments', require('./routes/payments').router);
-app.use('/api/admin', requireAuth(['ADMIN']), require('./routes/admin'));
-
-app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));
-app.get('/admin/*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'admin', 'index.html'));
-});
+app.use('/api/admin', require('./routes/admin'));
 
 io.use(async (socket, next) => {
   try {
