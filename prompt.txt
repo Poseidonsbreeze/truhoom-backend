@@ -1,0 +1,43 @@
+The database schema is complete and the booking endpoints are working.
+
+Implement the complete authentication module using Supabase Auth.
+
+Generate production-ready Express.js code with:
+
+POST /auth/signup
+POST /auth/login
+POST /auth/google
+POST /auth/apple
+POST /auth/logout
+POST /auth/refresh
+POST /auth/forgot-password
+POST /auth/reset-password
+GET /auth/me
+
+Requirements:
+
+Use the Supabase JavaScript SDK.
+Verify JWTs using Supabase.
+Automatically create or synchronize a user record in the local PostgreSQL database on first login.
+Return consistent JSON responses and proper HTTP status codes.
+Include request validation, centralized error handling, and authentication middleware.
+Generate controllers, services, routes, middleware, and validators.
+Do not redesign the database or authentication architecture.
+One additional endpoint
+
+I'd also add:
+
+POST /auth/complete-profile
+
+Here's why:
+
+With Google or Apple sign-in, users typically don't provide all the information your app needs. After the first login, you'll likely want to collect things like:
+
+Phone number
+User type (Customer or Artisan)
+Address or city
+Profile photo (optional)
+
+A dedicated "complete profile" endpoint makes onboarding much cleaner than trying to gather everything during OAuth.
+
+At this point, I'd stop working on database design and focus on getting authentication finished. Once auth is in place, your frontend team can begin integrating most of the app while the remaining APIs are built in parallel.

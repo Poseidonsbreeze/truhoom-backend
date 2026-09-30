@@ -9,7 +9,7 @@ AUTH ENDPOINTS (/auth)
 ====================================================================
 
 POST /auth/signup
-  Body: { "email": string, "password": string (min 6 chars), "fullName": string }
+  Body: { "email": string, "password": string (min 6 chars), "fullName": string, "role": "CUSTOMER" | "ARTISAN" }
   Response: { user, session (access_token + refresh_token), profile }
 
 POST /auth/login
@@ -48,10 +48,9 @@ GET /auth/me
 
 POST /auth/complete-profile
   Headers: Authorization: Bearer <access_token>
-  Body: { "role": "CUSTOMER" | "ARTISAN", "phone": string, "address"?: string, "avatarUrl"?: string }
+  Body: { "phone": string, "address"?: string, "avatarUrl"?: string }
   Response: { message, profile }
-  Note: Must be called after signup to set role and phone. Without this,
-        bookings won't work (booking endpoints require CUSTOMER role).
+  Note: The role is selected during signup and cannot be changed here.
 
 ====================================================================
 BOOKING ENDPOINTS (/api/bookings)

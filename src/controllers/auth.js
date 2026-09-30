@@ -2,7 +2,6 @@ const AuthService = require('../services/auth');
 const {
   validateSignup,
   validateLogin,
-  validateOAuth,
   validateRefresh,
   validateForgotPassword,
   validateResetPassword,
@@ -20,10 +19,12 @@ async function signup(req, res, next) {
       email: req.body.email,
       password: req.body.password,
       fullName: req.body.fullName,
+      role: req.body.role,
     });
 
     res.status(201).json({
-      message: 'Signup successful. Check your email for confirmation.',
+      message: 'Signup successful.',
+      requiresEmailConfirmation: false,
       user: result.user,
       session: result.session,
       profile: result.profile,
@@ -52,58 +53,6 @@ async function login(req, res, next) {
       profile: result.profile,
     });
   } catch (err) {
-    next(err);
-  }
-}
-
-async function googleLogin(req, res, next) {
-  try {
-    const errors = validateOAuth(req.body);
-    if (errors) {
-      return res.status(400).json({ error: 'Validation failed', details: errors });
-    }
-
-    const result = await AuthService.oauthLogin({
-      provider: 'google',
-      accessToken: req.body.accessToken,
-    });
-
-    res.status(200).json({
-      message: 'Google sign-in successful',
-      user: result.user,
-      session: result.session,
-      profile: result.profile,
-    });
-  } catch (err) {
-    if (err.code === 'OAUTH_NOT_CONFIGURED') {
-      return res.status(err.status || 503).json({ error: err.message, code: err.code });
-    }
-    next(err);
-  }
-}
-
-async function appleLogin(req, res, next) {
-  try {
-    const errors = validateOAuth(req.body);
-    if (errors) {
-      return res.status(400).json({ error: 'Validation failed', details: errors });
-    }
-
-    const result = await AuthService.oauthLogin({
-      provider: 'apple',
-      accessToken: req.body.identityToken,
-    });
-
-    res.status(200).json({
-      message: 'Apple sign-in successful',
-      user: result.user,
-      session: result.session,
-      profile: result.profile,
-    });
-  } catch (err) {
-    if (err.code === 'OAUTH_NOT_CONFIGURED') {
-      return res.status(err.status || 503).json({ error: err.message, code: err.code });
-    }
     next(err);
   }
 }
@@ -149,9 +98,8 @@ async function forgotPassword(req, res, next) {
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
 
-    await AuthService.forgotPassword(req.body.email);
-
-    res.status(200).json({ message: 'Password reset email sent' });
+    const result = await AuthService.forgotPassword(req.body.email);
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }
@@ -197,7 +145,6 @@ async function completeProfile(req, res, next) {
     }
 
     const profile = await AuthService.completeProfile(req.user.profileId, {
-      role: req.body.role,
       phone: req.body.phone,
       address: req.body.address,
       avatarUrl: req.body.avatarUrl,
@@ -215,8 +162,6 @@ async function completeProfile(req, res, next) {
 module.exports = {
   signup,
   login,
-  googleLogin,
-  appleLogin,
   logout,
   refresh,
   forgotPassword,

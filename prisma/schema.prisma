@@ -9,8 +9,12 @@ datasource db {
 
 enum BookingStatus {
   BROADCAST
+  QUOTE_REQUESTED
+  QUOTE_OFFERED
+  QUOTE_DECLINED
   ASSIGNED
   IN_PROGRESS
+  AWAITING_COMPLETION_CONFIRMATION
   COMPLETED
   CANCELLED
 }
@@ -18,6 +22,22 @@ enum BookingStatus {
 enum BookingType {
   INSTANT
   QUOTE
+}
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PayoutStatus {
+  NOT_READY
+  READY
+  PROCESSING
+  PAID
+  FAILED
 }
 
 model Role {
@@ -36,15 +56,39 @@ model Profile {
   phone     String?
   address   String?
   avatarUrl String?   @map("avatar_url")
-  roleId    Int       @map("role_id")
-  role      Role      @relation(fields: [roleId], references: [id])
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
+  roleId       Int       @map("role_id")
+  role         Role      @relation(fields: [roleId], references: [id])
+  available Boolean @default(false)
+  serviceAreas String[] @default([])
+  savedAddresses SavedAddress[]
+  reviewsReceived Review[] @relation("ArtisanReviews")
+  reviewsWritten Review[] @relation("CustomerReviews")
+  profession   String?
+  about        String?
+  yearsExperience Int?     @map("years_experience")
+  verified     Boolean   @default(false)
+  responseTime String?   @map("response_time")
+  skills       String[]  @default([])
+  latitude     Float?
+  longitude    Float?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   bookingsAsCustomer Booking[] @relation("CustomerBookings")
   bookingsAsArtisan  Booking[] @relation("ArtisanBookings")
   services           Service[]
   notifications      Notification[]
+  credential         LocalCredential?
+  sessions           LocalSession[]
+  passwordResets     PasswordReset[]
+  paymentMethods     PaymentMethod[]
+  payoutMethods      PayoutMethod[]
+  availability       Availability[]
+  verificationDocuments VerificationDocument[]
+  customerConversations Conversation[] @relation("CustomerConversations")
+  artisanConversations Conversation[] @relation("ArtisanConversations")
+  messagesSent       Message[]
+  bookingDeclines    BookingDecline[]
 
   @@map("profiles")
 }
@@ -61,6 +105,7 @@ model Service {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   bookings Booking[]
+  durationMinutes Int? @map("duration_minutes")
 
   @@map("services")
 }
@@ -72,8 +117,27 @@ model Booking {
   serviceId   Int           @map("service_id")
   bookingType BookingType   @default(INSTANT) @map("booking_type")
   status      BookingStatus @default(BROADCAST)
+  notes String?
+  customerBudget Decimal? @map("customer_budget") @db.Decimal(10, 2)
+  quotedPrice Decimal? @map("quoted_price") @db.Decimal(10, 2)
+  quoteMessage String? @map("quote_message")
+  quotedAt DateTime? @map("quoted_at") @db.Timestamptz()
+  artisanCompletedAt DateTime? @map("artisan_completed_at") @db.Timestamptz()
+  customerCompletedAt DateTime? @map("customer_completed_at") @db.Timestamptz()
+  paymentStatus PaymentStatus @default(UNPAID) @map("payment_status")
+  paymentReference String? @unique @map("payment_reference")
+  paymentAmount Decimal? @map("payment_amount") @db.Decimal(10, 2)
+  platformFee Decimal? @map("platform_fee") @db.Decimal(10, 2)
+  artisanNet Decimal? @map("artisan_net") @db.Decimal(10, 2)
+  paidAt DateTime? @map("paid_at") @db.Timestamptz()
+  payoutStatus PayoutStatus @default(NOT_READY) @map("payout_status")
+  payoutReference String? @unique @map("payout_reference")
+  payoutTransferCode String? @map("payout_transfer_code")
+  paidOutAt DateTime? @map("paid_out_at") @db.Timestamptz()
+  address String?
   scheduledAt DateTime      @map("scheduled_at") @db.Timestamptz()
-  location    Unsupported("geometry(Point, 4326)")
+  latitude    Float
+  longitude   Float
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
@@ -81,7 +145,13 @@ model Booking {
   artisan         Profile?               @relation("ArtisanBookings", fields: [artisanId], references: [id])
   service         Service                @relation(fields: [serviceId], references: [id])
   statusHistory   BookingStatusHistory[]
+  review          Review?
+  conversation    Conversation?
+  declines        BookingDecline[]
 
+  @@index([customerId, status, scheduledAt])
+  @@index([artisanId, status, scheduledAt])
+  @@index([serviceId, status])
   @@map("bookings")
 }
 
@@ -106,5 +176,163 @@ model Notification {
 
   profile Profile @relation(fields: [profileId], references: [id])
 
+  @@index([profileId, read, createdAt])
   @@map("notifications")
+}
+
+model PaymentMethod {
+  id Int @id @default(autoincrement())
+  profileId Int @map("profile_id")
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  provider String
+  providerToken String @unique @map("provider_token")
+  brand String
+  last4 String
+  expiryMonth Int @map("expiry_month")
+  expiryYear Int @map("expiry_year")
+  isDefault Boolean @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([profileId])
+  @@map("payment_methods")
+}
+
+model PayoutMethod {
+  id Int @id @default(autoincrement())
+  profileId Int @map("profile_id")
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  provider String
+  recipientToken String @unique @map("recipient_token")
+  bankName String @map("bank_name")
+  accountName String @map("account_name")
+  accountLast4 String @map("account_last4")
+  isDefault Boolean @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([profileId])
+  @@map("payout_methods")
+}
+
+model Availability {
+  id Int @id @default(autoincrement())
+  profileId Int @map("profile_id")
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  weekday Int
+  enabled Boolean @default(false)
+  startTime String @map("start_time")
+  endTime String @map("end_time")
+  @@unique([profileId, weekday])
+  @@map("availability")
+}
+
+model VerificationDocument {
+  id Int @id @default(autoincrement())
+  profileId Int @map("profile_id")
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  type String
+  documentUrl String @map("document_url")
+  status String @default("PENDING")
+  rejectionReason String? @map("rejection_reason")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@unique([profileId, type])
+  @@map("verification_documents")
+}
+
+model Conversation {
+  id Int @id @default(autoincrement())
+  customerId Int @map("customer_id")
+  artisanId Int @map("artisan_id")
+  bookingId Int? @unique @map("booking_id")
+  customer Profile @relation("CustomerConversations", fields: [customerId], references: [id], onDelete: Cascade)
+  artisan Profile @relation("ArtisanConversations", fields: [artisanId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  messages Message[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@unique([customerId, artisanId])
+  @@index([customerId])
+  @@index([artisanId])
+  @@map("conversations")
+}
+
+model Message {
+  id Int @id @default(autoincrement())
+  conversationId Int @map("conversation_id")
+  senderId Int @map("sender_id")
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender Profile @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  body String
+  readAt DateTime? @map("read_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model BookingDecline {
+  bookingId Int @map("booking_id")
+  artisanId Int @map("artisan_id")
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  artisan Profile @relation(fields: [artisanId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+  @@id([bookingId, artisanId])
+  @@map("booking_declines")
+}
+
+model LocalCredential {
+  id Int @id @default(autoincrement())
+  email String @unique
+  passwordHash String @map("password_hash")
+  profileId Int @unique @map("profile_id")
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@map("local_credentials")
+}
+
+model LocalSession {
+  id Int @id @default(autoincrement())
+  accessHash String @unique @map("access_hash")
+  refreshHash String @unique @map("refresh_hash")
+  accessExpiresAt DateTime @map("access_expires_at")
+  refreshExpiresAt DateTime @map("refresh_expires_at")
+  profileId Int @map("profile_id")
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@index([profileId])
+  @@map("local_sessions")
+}
+
+model PasswordReset {
+  id Int @id @default(autoincrement())
+  tokenHash String @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  profileId Int @map("profile_id")
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@index([profileId])
+  @@map("password_resets")
+}
+
+model SavedAddress {
+  id Int @id @default(autoincrement())
+  profileId Int
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  label String
+  address String
+  lat Float
+  lng Float
+  isDefault Boolean @default(false)
+  @@index([profileId])
+  @@map("saved_addresses")
+}
+
+model Review {
+  id Int @id @default(autoincrement())
+  artisanId Int
+  authorId Int
+  artisan Profile @relation("ArtisanReviews", fields: [artisanId], references: [id], onDelete: Cascade)
+  author Profile @relation("CustomerReviews", fields: [authorId], references: [id], onDelete: Cascade)
+  rating Int
+  comment String
+  service String
+  bookingId Int? @unique @map("booking_id")
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@index([artisanId])
+  @@map("reviews")
 }
